@@ -4,7 +4,14 @@ import fs from 'fs';
 import { prisma } from '../db';
 import { config } from '../config';
 
-function getCredentials(): any | null {
+type GoogleCredentials = {
+  client_email: string;
+  private_key: string;
+};
+
+type GoogleApiError = Error & { code?: number; response?: { status?: number } };
+
+function getCredentials(): GoogleCredentials | null {
   if (config.google.credentialsJson) {
     try { return JSON.parse(config.google.credentialsJson); } catch { return null; }
   }
@@ -40,6 +47,22 @@ function buildObjectId(cardSerialNumber: string): string {
   return `${config.google.issuerId}.${cardSerialNumber.replace(/-/g, '_')}`;
 }
 
+function publicImageUrl(value: string | null): string | null {
+  if (!value) return null;
+  return /^https:\/\//i.test(value) ? value : null;
+}
+
+function jwtOrigins(): string[] {
+  return /^https:\/\//i.test(config.apiBaseUrl) || /^http:\/\/localhost(:\d+)?$/i.test(config.apiBaseUrl)
+    ? [config.apiBaseUrl]
+    : [];
+}
+
+function googleErrorStatus(error: unknown): number | undefined {
+  const apiError = error as GoogleApiError;
+  return apiError.code || apiError.response?.status;
+}
+
 export async function createLoyaltyClass(programId: string): Promise<void> {
   if (!credentialsExist() || !config.google.issuerId) return;
 
@@ -54,16 +77,12 @@ export async function createLoyaltyClass(programId: string): Promise<void> {
   const client = await auth.getClient();
 
   const classId = buildClassId(programId);
+  const logoUrl = publicImageUrl(program.restaurant.logo);
 
   const loyaltyClass = {
     id: classId,
     issuerName: program.restaurant.name,
     programName: program.name,
-    programLogo: {
-      sourceUri: {
-        uri: program.restaurant.logo || `${config.apiBaseUrl}/api/public/default-logo.png`,
-      },
-    },
     reviewStatus: 'UNDER_REVIEW',
     hexBackgroundColor: program.color,
     localizedIssuerName: {
@@ -72,6 +91,13 @@ export async function createLoyaltyClass(programId: string): Promise<void> {
     localizedProgramName: {
       defaultValue: { language: 'fr', value: program.name },
     },
+    ...(logoUrl && {
+      programLogo: {
+        sourceUri: {
+          uri: logoUrl,
+        },
+      },
+    }),
   };
 
   try {
@@ -85,7 +111,11 @@ export async function createLoyaltyClass(programId: string): Promise<void> {
       method: 'PUT',
       data: loyaltyClass,
     });
-  } catch {
+  } catch (error) {
+    if (googleErrorStatus(error) !== 404) {
+      throw error;
+    }
+
     // Class doesn't exist, create it
     await (client as any).request({
       url: 'https://walletobjects.googleapis.com/walletobjects/v1/loyaltyClass',
@@ -110,12 +140,14 @@ export async function generateGooglePassUrl(serialNumber: string): Promise<strin
 
   if (!card) throw new Error('Carte non trouvée');
 
+  await createLoyaltyClass(card.programId);
+
   const classId = buildClassId(card.programId);
   const objectId = buildObjectId(serialNumber);
 
   const isStamps = card.program.type === 'STAMPS';
 
-  const loyaltyObject: any = {
+  const loyaltyObject = {
     id: objectId,
     classId,
     state: 'ACTIVE',
@@ -159,7 +191,8 @@ export async function generateGooglePassUrl(serialNumber: string): Promise<strin
       iss: credentialsJson.client_email,
       aud: 'google',
       typ: 'savetowallet',
-      origins: [config.apiBaseUrl],
+      iat: Math.floor(Date.now() / 1000),
+      origins: jwtOrigins(),
       payload: {
         loyaltyObjects: [loyaltyObject],
       },

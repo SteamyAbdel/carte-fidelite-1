@@ -4,12 +4,23 @@ import path from 'path';
 import { prisma } from '../db';
 import { config } from '../config';
 
+const FALLBACK_ICON_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+  'base64'
+);
+
+function missingCerts(): string[] {
+  return [
+    ['APPLE_WWDR_CERT_PATH', config.apple.wwdrCertPath],
+    ['APPLE_SIGNER_CERT_PATH', config.apple.signerCertPath],
+    ['APPLE_SIGNER_KEY_PATH', config.apple.signerKeyPath],
+  ]
+    .filter(([, filePath]) => !fs.existsSync(filePath))
+    .map(([name]) => name);
+}
+
 function certsExist(): boolean {
-  return (
-    fs.existsSync(config.apple.wwdrCertPath) &&
-    fs.existsSync(config.apple.signerCertPath) &&
-    fs.existsSync(config.apple.signerKeyPath)
-  );
+  return missingCerts().length === 0;
 }
 
 function buildStampLabel(current: number, goal: number): string {
@@ -22,9 +33,20 @@ function buildStampLabel(current: number, goal: number): string {
   return stamps.join(' ');
 }
 
+function templateAssetPath(fileName: string): string | null {
+  const candidates = [
+    path.resolve(process.cwd(), '../passes/templates', fileName),
+    path.resolve(process.cwd(), 'passes/templates', fileName),
+    path.resolve(__dirname, '../../../passes/templates', fileName),
+    path.resolve(__dirname, '../../passes/templates', fileName),
+  ];
+
+  return candidates.find((candidate) => fs.existsSync(candidate)) || null;
+}
+
 export async function generateApplePass(serialNumber: string): Promise<Buffer> {
   if (!certsExist()) {
-    throw new Error('Certificats Apple non configurés. Consultez le README pour les instructions.');
+    throw new Error(`Certificats Apple non configurés: ${missingCerts().join(', ')}.`);
   }
 
   const card = await prisma.loyaltyCard.findUnique({
@@ -60,6 +82,7 @@ export async function generateApplePass(serialNumber: string): Promise<Buffer> {
       logoText: card.program.restaurant.name,
       webServiceURL: `${config.apiBaseUrl}/api/v1`,
       authenticationToken: card.serialNumber,
+      sharingProhibited: false,
     }
   );
 
@@ -122,17 +145,19 @@ export async function generateApplePass(serialNumber: string): Promise<Buffer> {
     }
   );
 
-  // Load logo if restaurant has one stored locally
-  const defaultLogoPath = path.resolve(__dirname, '../../passes/templates/logo.png');
-  if (fs.existsSync(defaultLogoPath)) {
-    pass.addBuffer('logo.png', fs.readFileSync(defaultLogoPath));
-    pass.addBuffer('logo@2x.png', fs.readFileSync(defaultLogoPath));
+  const logoPath = templateAssetPath('logo.png');
+  if (logoPath) {
+    pass.addBuffer('logo.png', fs.readFileSync(logoPath));
+    pass.addBuffer('logo@2x.png', fs.readFileSync(logoPath));
   }
 
-  const iconPath = path.resolve(__dirname, '../../passes/templates/icon.png');
-  if (fs.existsSync(iconPath)) {
+  const iconPath = templateAssetPath('icon.png');
+  if (iconPath) {
     pass.addBuffer('icon.png', fs.readFileSync(iconPath));
     pass.addBuffer('icon@2x.png', fs.readFileSync(iconPath));
+  } else {
+    pass.addBuffer('icon.png', FALLBACK_ICON_PNG);
+    pass.addBuffer('icon@2x.png', FALLBACK_ICON_PNG);
   }
 
   const buffer = pass.getAsBuffer();
