@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Award, Stamp, Star, Smartphone, CheckCircle } from 'lucide-react';
 import axios from 'axios';
+import { apiErrorMessage } from '../api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -96,8 +97,8 @@ export default function CustomerRegister() {
         googlePassUrl: data.googlePassUrl,
         serialNumber: data.card.serialNumber,
       });
-    } catch (err: any) {
-      setError(err.response?.data?.error || "Erreur lors de l'inscription");
+    } catch (err) {
+      setError(apiErrorMessage(err, "Erreur lors de l'inscription"));
     } finally {
       setSubmitting(false);
     }

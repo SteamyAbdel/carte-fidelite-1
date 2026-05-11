@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Stamp, Star, Users, ExternalLink, Copy, Check } from 'lucide-react';
-import api from '../api';
+import api, { apiErrorMessage } from '../api';
 
 interface Program {
   id: string;
@@ -168,8 +168,8 @@ function CreateProgramForm({ onClose, onCreated }: { onClose: () => void; onCrea
       await api.post('/programs', form);
       onCreated();
       onClose();
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Erreur');
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Erreur'));
     } finally {
       setLoading(false);
     }

@@ -104,8 +104,8 @@ function formatRelative(dateStr: string): string {
 
 function txLabel(type: string): { label: string; color: string } {
   switch (type) {
-    case 'STAMP': return { label: 'Tampon', color: 'bg-indigo-100 text-indigo-700' };
-    case 'POINTS': return { label: 'Points', color: 'bg-amber-100 text-amber-700' };
+    case 'STAMP_ADD': return { label: 'Tampon', color: 'bg-indigo-100 text-indigo-700' };
+    case 'POINTS_ADD': return { label: 'Points', color: 'bg-amber-100 text-amber-700' };
     case 'REWARD_CLAIMED': return { label: 'Récompense', color: 'bg-rose-100 text-rose-700' };
     default: return { label: type, color: 'bg-gray-100 text-gray-700' };
   }

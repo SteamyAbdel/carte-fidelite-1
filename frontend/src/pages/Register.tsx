@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Award } from 'lucide-react';
-import api from '../api';
+import api, { apiErrorMessage } from '../api';
 
 interface RegisterProps {
   onLogin: () => void;
@@ -27,8 +27,8 @@ export default function Register({ onLogin }: RegisterProps) {
       localStorage.setItem('restaurant', JSON.stringify(data.restaurant));
       onLogin();
       navigate('/');
-    } catch (err: any) {
-      setError(err.response?.data?.error || "Erreur lors de l'inscription");
+    } catch (err) {
+      setError(apiErrorMessage(err, "Erreur lors de l'inscription"));
     } finally {
       setLoading(false);
     }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { QrCode, CheckCircle, XCircle, Gift, Loader2 } from 'lucide-react';
-import api from '../api';
+import api, { apiErrorMessage } from '../api';
 
 interface ScanResult {
   success: boolean;
@@ -70,10 +70,10 @@ export default function Scanner() {
         programType: data.programType,
         goal: data.goal,
       });
-    } catch (err: any) {
+    } catch (err) {
       setResult({
         success: false,
-        message: err.response?.data?.error || 'Erreur lors du scan',
+        message: apiErrorMessage(err, 'Erreur lors du scan'),
       });
     } finally {
       setLoading(false);

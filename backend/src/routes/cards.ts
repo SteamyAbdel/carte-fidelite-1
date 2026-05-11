@@ -5,6 +5,7 @@ import { addStamp } from '../services/loyalty';
 import { updateApplePass } from '../services/apple-wallet';
 import { updateGooglePass } from '../services/google-wallet';
 import { param } from '../utils/params';
+import { positiveInt } from '../utils/validation';
 
 export const cardRouter = Router();
 
@@ -75,7 +76,12 @@ cardRouter.post('/:serial/stamp', authenticate, async (req: AuthRequest, res: Re
       return;
     }
 
-    const amount = req.body.amount || 1;
+    const amount = req.body.amount === undefined ? 1 : positiveInt(req.body.amount);
+    if (!amount || amount > 10000) {
+      res.status(400).json({ error: 'Montant invalide' });
+      return;
+    }
+
     const result = await addStamp(serial, amount);
 
     try { await updateApplePass(serial); } catch (e) { console.error('Apple push error:', e); }
@@ -83,7 +89,7 @@ cardRouter.post('/:serial/stamp', authenticate, async (req: AuthRequest, res: Re
 
     res.json({
       ...result,
-      message: result.rewardEarned ? 'Récompense débloquée !' : 'Tampon ajouté',
+      message: result.rewardEarned ? 'Récompense disponible !' : 'Tampon ajouté',
     });
   } catch (error) {
     console.error('Stamp error:', error);

@@ -104,24 +104,41 @@ restaurantRouter.get('/stats', authenticate, async (req: AuthRequest, res: Respo
           include: {
             _count: { select: { transactions: true } },
             customer: { select: { name: true, email: true } },
-            transactions: { orderBy: { createdAt: 'desc' }, take: 5 },
           },
         },
       },
     });
 
-    const programIds = programs.map((p) => p.id);
     const allCards = programs.flatMap((p) => p.cards);
-    const allTransactions = allCards.flatMap((c) => c.transactions);
+    const transactionWhere = { card: { program: { restaurantId: req.restaurantId } } };
+    const [
+      totalTransactions,
+      transactionsThisWeek,
+      transactionsThisMonth,
+      recentTransactionRows,
+    ] = await prisma.$transaction([
+      prisma.transaction.count({ where: transactionWhere }),
+      prisma.transaction.count({ where: { ...transactionWhere, createdAt: { gte: sevenDaysAgo } } }),
+      prisma.transaction.count({ where: { ...transactionWhere, createdAt: { gte: thirtyDaysAgo } } }),
+      prisma.transaction.findMany({
+        where: transactionWhere,
+        include: {
+          card: {
+            include: {
+              customer: { select: { name: true, email: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      }),
+    ]);
 
     const totalCards = programs.reduce((sum, p) => sum + p._count.cards, 0);
-    const totalTransactions = allTransactions.length;
     const totalRewards = allCards.reduce((s, c) => s + c.totalRewardsEarned, 0);
 
     const newCardsThisWeek = allCards.filter((c) => c.createdAt >= sevenDaysAgo).length;
     const newCardsThisMonth = allCards.filter((c) => c.createdAt >= thirtyDaysAgo).length;
-    const transactionsThisWeek = allTransactions.filter((t) => t.createdAt >= sevenDaysAgo).length;
-    const transactionsThisMonth = allTransactions.filter((t) => t.createdAt >= thirtyDaysAgo).length;
 
     const programDetails = programs.map((p) => ({
       id: p.id,
@@ -158,20 +175,14 @@ restaurantRouter.get('/stats', authenticate, async (req: AuthRequest, res: Respo
       .sort((a, b) => b.totalTransactions - a.totalTransactions)
       .slice(0, 5);
 
-    const recentTransactions = allTransactions
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-      .slice(0, 10)
-      .map((t) => {
-        const card = allCards.find((c) => c.id === t.cardId);
-        return {
-          id: t.id,
-          type: t.type,
-          amount: t.amount,
-          note: t.note,
-          createdAt: t.createdAt,
-          clientName: card?.customer.name || card?.customer.email || '—',
-        };
-      });
+    const recentTransactions = recentTransactionRows.map((t) => ({
+      id: t.id,
+      type: t.type,
+      amount: t.amount,
+      note: t.note,
+      createdAt: t.createdAt,
+      clientName: t.card.customer.name || t.card.customer.email,
+    }));
 
     const recentClients = allCards
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())

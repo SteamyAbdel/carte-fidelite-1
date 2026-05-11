@@ -15,6 +15,10 @@ export interface StampResult {
 }
 
 export async function addStamp(serialNumber: string, amount: number = 1): Promise<StampResult> {
+  if (!Number.isInteger(amount) || amount <= 0 || amount > 10000) {
+    throw new Error('Montant invalide');
+  }
+
   const card = await prisma.loyaltyCard.findUnique({
     where: { serialNumber },
     include: { program: true },
@@ -34,44 +38,34 @@ export async function addStamp(serialNumber: string, amount: number = 1): Promis
     newStamps += amount;
     if (newStamps >= goal) {
       rewardEarned = true;
-      newStamps = newStamps - goal;
     }
   } else {
     newPoints += amount;
     if (newPoints >= goal) {
       rewardEarned = true;
-      newPoints = newPoints - goal;
     }
   }
 
-  const updated = await prisma.loyaltyCard.update({
-    where: { id: card.id },
-    data: {
-      currentStamps: newStamps,
-      currentPoints: newPoints,
-      totalRewardsEarned: rewardEarned ? card.totalRewardsEarned + 1 : card.totalRewardsEarned,
-      lastUpdated: new Date(),
-    },
-  });
-
-  await prisma.transaction.create({
-    data: {
-      cardId: card.id,
-      type: isStamps ? 'STAMP_ADD' : 'POINTS_ADD',
-      amount,
-    },
-  });
-
-  if (rewardEarned) {
-    await prisma.transaction.create({
+  const updated = await prisma.$transaction(async (tx) => {
+    const loyaltyCard = await tx.loyaltyCard.update({
+      where: { id: card.id },
       data: {
-        cardId: card.id,
-        type: 'REWARD_CLAIMED',
-        amount: 1,
-        note: card.program.reward,
+        currentStamps: newStamps,
+        currentPoints: newPoints,
+        lastUpdated: new Date(),
       },
     });
-  }
+
+    await tx.transaction.create({
+      data: {
+        cardId: card.id,
+        type: isStamps ? 'STAMP_ADD' : 'POINTS_ADD',
+        amount,
+      },
+    });
+
+    return loyaltyCard;
+  });
 
   return {
     card: {

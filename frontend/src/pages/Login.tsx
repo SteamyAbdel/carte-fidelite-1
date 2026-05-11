@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Award } from 'lucide-react';
-import api from '../api';
+import api, { apiErrorMessage } from '../api';
 
 interface LoginProps {
   onLogin: () => void;
@@ -25,8 +25,8 @@ export default function Login({ onLogin }: LoginProps) {
       localStorage.setItem('restaurant', JSON.stringify(data.restaurant));
       onLogin();
       navigate('/');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Erreur de connexion');
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Erreur de connexion'));
     } finally {
       setLoading(false);
     }

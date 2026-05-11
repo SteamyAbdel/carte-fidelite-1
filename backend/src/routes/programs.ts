@@ -2,14 +2,21 @@ import { Router, Response } from 'express';
 import { prisma } from '../db';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { param } from '../utils/params';
+import { nonEmptyString, optionalHexColor, positiveInt } from '../utils/validation';
 
 export const programRouter = Router();
 
 programRouter.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { type, name, description, stampGoal, pointsPerEuro, pointsGoal, reward, color } = req.body;
+    const { type, description } = req.body;
+    const name = nonEmptyString(req.body.name);
+    const reward = nonEmptyString(req.body.reward);
+    const stampGoal = positiveInt(req.body.stampGoal);
+    const pointsGoal = positiveInt(req.body.pointsGoal);
+    const pointsPerEuro = typeof req.body.pointsPerEuro === 'number' && req.body.pointsPerEuro > 0 ? req.body.pointsPerEuro : null;
+    const color = optionalHexColor(req.body.color);
 
-    if (!type || !name || !reward) {
+    if ((type !== 'STAMPS' && type !== 'POINTS') || !name || !reward) {
       res.status(400).json({ error: 'Type, nom et récompense requis' });
       return;
     }
@@ -24,12 +31,17 @@ programRouter.post('/', authenticate, async (req: AuthRequest, res: Response) =>
       return;
     }
 
+    if (req.body.color && !color) {
+      res.status(400).json({ error: 'Couleur invalide' });
+      return;
+    }
+
     const program = await prisma.loyaltyProgram.create({
       data: {
         restaurantId: req.restaurantId!,
         type,
         name,
-        description,
+        description: typeof description === 'string' ? description.trim() : null,
         stampGoal: type === 'STAMPS' ? stampGoal : null,
         pointsPerEuro: type === 'POINTS' ? pointsPerEuro : null,
         pointsGoal: type === 'POINTS' ? pointsGoal : null,
@@ -99,13 +111,26 @@ programRouter.put('/:id', authenticate, async (req: AuthRequest, res: Response) 
       return;
     }
 
-    const { name, description, reward, color, isActive } = req.body;
+    const name = req.body.name === undefined ? undefined : nonEmptyString(req.body.name);
+    const reward = req.body.reward === undefined ? undefined : nonEmptyString(req.body.reward);
+    const color = req.body.color === undefined ? undefined : optionalHexColor(req.body.color);
+    const { description, isActive } = req.body;
+
+    if ((req.body.name !== undefined && !name) || (req.body.reward !== undefined && !reward)) {
+      res.status(400).json({ error: 'Nom ou récompense invalide' });
+      return;
+    }
+
+    if (req.body.color !== undefined && !color) {
+      res.status(400).json({ error: 'Couleur invalide' });
+      return;
+    }
 
     const program = await prisma.loyaltyProgram.update({
       where: { id },
       data: {
         ...(name && { name }),
-        ...(description !== undefined && { description }),
+        ...(description !== undefined && { description: typeof description === 'string' ? description.trim() : null }),
         ...(reward && { reward }),
         ...(color && { color }),
         ...(isActive !== undefined && { isActive }),
