@@ -1,8 +1,33 @@
 import { Router, Response } from 'express';
 import { prisma } from '../db';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { nonEmptyString, pngDataUrl } from '../utils/validation';
 
 export const restaurantRouter = Router();
+
+restaurantRouter.get('/logo/:id', async (req, res) => {
+  try {
+    const restaurant = await prisma.restaurant.findUnique({
+      where: { id: req.params.id },
+      select: { logo: true },
+    });
+
+    if (!restaurant?.logo?.startsWith('data:image/png;base64,')) {
+      res.status(404).send();
+      return;
+    }
+
+    const base64 = restaurant.logo.slice('data:image/png;base64,'.length);
+    res.set({
+      'Content-Type': 'image/png',
+      'Cache-Control': 'public, max-age=300',
+    });
+    res.send(Buffer.from(base64, 'base64'));
+  } catch (error) {
+    console.error('Logo error:', error);
+    res.status(500).send();
+  }
+});
 
 restaurantRouter.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
   try {
@@ -25,7 +50,20 @@ restaurantRouter.get('/me', authenticate, async (req: AuthRequest, res: Response
 
 restaurantRouter.put('/me', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { name, address, phone, logo } = req.body;
+    const name = req.body.name === undefined ? undefined : nonEmptyString(req.body.name);
+    const logo = req.body.logo === undefined ? undefined : pngDataUrl(req.body.logo);
+
+    if (req.body.name !== undefined && !name) {
+      res.status(400).json({ error: 'Nom invalide' });
+      return;
+    }
+
+    if (req.body.logo !== undefined && logo === null) {
+      res.status(400).json({ error: 'Logo invalide. Utilisez un PNG de 500 Ko maximum.' });
+      return;
+    }
+
+    const { address, phone } = req.body;
 
     const restaurant = await prisma.restaurant.update({
       where: { id: req.restaurantId },

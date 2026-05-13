@@ -6,6 +6,7 @@ import api, { apiErrorMessage } from '../api';
 interface ScanResult {
   success: boolean;
   message: string;
+  serial?: string;
   rewardEarned?: boolean;
   card?: {
     currentStamps: number;
@@ -21,6 +22,7 @@ export default function Scanner() {
   const [result, setResult] = useState<ScanResult | null>(null);
   const [manualSerial, setManualSerial] = useState('');
   const [loading, setLoading] = useState(false);
+  const [redeeming, setRedeeming] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -65,6 +67,7 @@ export default function Scanner() {
       setResult({
         success: true,
         message: data.message,
+        serial,
         rewardEarned: data.rewardEarned,
         card: data.card,
         programType: data.programType,
@@ -77,6 +80,32 @@ export default function Scanner() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRedeem = async () => {
+    if (!result?.serial) return;
+    setRedeeming(true);
+
+    try {
+      const { data } = await api.post(`/cards/${result.serial}/redeem`);
+      setResult({
+        success: true,
+        message: data.message,
+        serial: result.serial,
+        rewardEarned: false,
+        card: data.card,
+        programType: result.programType,
+        goal: result.goal,
+      });
+    } catch (err) {
+      setResult((current) => ({
+        success: false,
+        message: apiErrorMessage(err, 'Erreur lors de l’utilisation de la récompense'),
+        serial: current?.serial,
+      }));
+    } finally {
+      setRedeeming(false);
     }
   };
 
@@ -193,6 +222,16 @@ export default function Scanner() {
                   </p>
                 )}
               </div>
+            )}
+
+            {result.rewardEarned && result.success && (
+              <button
+                onClick={handleRedeem}
+                disabled={redeeming}
+                className="mt-5 w-full bg-amber-600 text-white px-4 py-3 rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50"
+              >
+                {redeeming ? 'Utilisation...' : 'Utiliser la récompense et remettre à zéro'}
+              </button>
             )}
 
             <button

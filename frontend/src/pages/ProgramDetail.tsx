@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Users, Copy, Check, Stamp, Star } from 'lucide-react';
-import api from '../api';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Users, Copy, Check, Stamp, Star, Pencil, Trash2, X } from 'lucide-react';
+import api, { apiErrorMessage } from '../api';
 
 interface Card {
   id: string;
@@ -30,17 +30,23 @@ interface Program {
 
 export default function ProgramDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [program, setProgram] = useState<Program | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
+  const loadProgram = () => {
     if (!id) return;
     api.get(`/programs/${id}`).then(({ data }) => {
       setProgram(data);
       setLoading(false);
     });
-  }, [id]);
+  };
+
+  useEffect(loadProgram, [id]);
 
   const copyLink = () => {
     navigator.clipboard.writeText(`${window.location.origin}/join/${id}`);
@@ -64,6 +70,21 @@ export default function ProgramDetail() {
 
   const goal = program.type === 'STAMPS' ? program.stampGoal : program.pointsGoal;
 
+  const handleDelete = async () => {
+    if (!program || !window.confirm(`Supprimer le programme "${program.name}" et toutes ses cartes ?`)) return;
+    setDeleting(true);
+    setError('');
+
+    try {
+      await api.delete(`/programs/${program.id}`);
+      navigate('/programs');
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Erreur lors de la suppression'));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div>
       <Link to="/programs" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-6">
@@ -71,6 +92,7 @@ export default function ProgramDetail() {
       </Link>
 
       <div className="bg-white rounded-2xl border border-gray-200 p-8 mb-6">
+        {error && <div className="bg-red-50 text-red-700 px-4 py-3 rounded-lg text-sm mb-5">{error}</div>}
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-4">
             <div
@@ -93,16 +115,33 @@ export default function ProgramDetail() {
             </div>
           </div>
 
-          <button
-            onClick={copyLink}
-            className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            {copied ? (
-              <><Check className="w-4 h-4 text-green-600" /> Copié !</>
-            ) : (
-              <><Copy className="w-4 h-4" /> Copier le lien d'inscription</>
-            )}
-          </button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              onClick={copyLink}
+              className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              {copied ? (
+                <><Check className="w-4 h-4 text-green-600" /> Copié !</>
+              ) : (
+                <><Copy className="w-4 h-4" /> Lien</>
+              )}
+            </button>
+            <button
+              onClick={() => setEditing(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              <Pencil className="w-4 h-4" />
+              Modifier
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="inline-flex items-center gap-2 px-4 py-2 border border-red-200 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+            >
+              <Trash2 className="w-4 h-4" />
+              {deleting ? 'Suppression...' : 'Supprimer'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -168,6 +207,185 @@ export default function ProgramDetail() {
           </div>
         )}
       </div>
+
+      {editing && (
+        <EditProgramModal
+          program={program}
+          onClose={() => setEditing(false)}
+          onSaved={(updated) => {
+            setProgram({ ...program, ...updated });
+            setEditing(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function EditProgramModal({
+  program,
+  onClose,
+  onSaved,
+}: {
+  program: Program;
+  onClose: () => void;
+  onSaved: (program: Program) => void;
+}) {
+  const [form, setForm] = useState({
+    name: program.name,
+    description: program.description || '',
+    reward: program.reward,
+    color: program.color,
+    stampGoal: program.stampGoal || 10,
+    pointsPerEuro: program.pointsPerEuro || 1,
+    pointsGoal: program.pointsGoal || 100,
+    isActive: program.isActive,
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setLoading(true);
+    setError('');
+
+    try {
+      const payload = {
+        name: form.name,
+        description: form.description,
+        reward: form.reward,
+        color: form.color,
+        isActive: form.isActive,
+        ...(program.type === 'STAMPS'
+          ? { stampGoal: form.stampGoal }
+          : { pointsPerEuro: form.pointsPerEuro, pointsGoal: form.pointsGoal }),
+      };
+      const { data } = await api.put(`/programs/${program.id}`, payload);
+      onSaved({ ...program, ...data });
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Erreur lors de la modification'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+      <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-8 space-y-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold text-gray-900">Modifier le programme</h2>
+          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {error && <div className="bg-red-50 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div>}
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Nom *</label>
+          <input
+            type="text"
+            value={form.name}
+            onChange={(event) => setForm({ ...form, name: event.target.value })}
+            required
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+          />
+        </div>
+
+        {program.type === 'STAMPS' ? (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Nombre de tampons *</label>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={form.stampGoal}
+              onChange={(event) => setForm({ ...form, stampGoal: parseInt(event.target.value, 10) || 1 })}
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+            />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Points par euro *</label>
+              <input
+                type="number"
+                min={0.1}
+                step={0.1}
+                value={form.pointsPerEuro}
+                onChange={(event) => setForm({ ...form, pointsPerEuro: parseFloat(event.target.value) || 0.1 })}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Objectif points *</label>
+              <input
+                type="number"
+                min={1}
+                value={form.pointsGoal}
+                onChange={(event) => setForm({ ...form, pointsGoal: parseInt(event.target.value, 10) || 1 })}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+              />
+            </div>
+          </div>
+        )}
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Récompense *</label>
+          <input
+            type="text"
+            value={form.reward}
+            onChange={(event) => setForm({ ...form, reward: event.target.value })}
+            required
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Description</label>
+          <textarea
+            value={form.description}
+            onChange={(event) => setForm({ ...form, description: event.target.value })}
+            rows={3}
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+            <input
+              type="checkbox"
+              checked={form.isActive}
+              onChange={(event) => setForm({ ...form, isActive: event.target.checked })}
+              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            Programme actif
+          </label>
+          <input
+            type="color"
+            value={form.color}
+            onChange={(event) => setForm({ ...form, color: event.target.value })}
+            className="w-16 h-10 border border-gray-300 rounded-lg cursor-pointer"
+          />
+        </div>
+
+        <div className="flex gap-3 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50"
+          >
+            Annuler
+          </button>
+          <button
+            type="submit"
+            disabled={loading}
+            className="flex-1 bg-indigo-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {loading ? 'Sauvegarde...' : 'Sauvegarder'}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

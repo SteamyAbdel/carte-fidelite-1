@@ -114,6 +114,13 @@ programRouter.put('/:id', authenticate, async (req: AuthRequest, res: Response) 
     const name = req.body.name === undefined ? undefined : nonEmptyString(req.body.name);
     const reward = req.body.reward === undefined ? undefined : nonEmptyString(req.body.reward);
     const color = req.body.color === undefined ? undefined : optionalHexColor(req.body.color);
+    const stampGoal = req.body.stampGoal === undefined ? undefined : positiveInt(req.body.stampGoal);
+    const pointsGoal = req.body.pointsGoal === undefined ? undefined : positiveInt(req.body.pointsGoal);
+    const pointsPerEuro = req.body.pointsPerEuro === undefined
+      ? undefined
+      : typeof req.body.pointsPerEuro === 'number' && req.body.pointsPerEuro > 0
+        ? req.body.pointsPerEuro
+        : null;
     const { description, isActive } = req.body;
 
     if ((req.body.name !== undefined && !name) || (req.body.reward !== undefined && !reward)) {
@@ -126,6 +133,22 @@ programRouter.put('/:id', authenticate, async (req: AuthRequest, res: Response) 
       return;
     }
 
+    if (existing.type === 'STAMPS' && req.body.stampGoal !== undefined && !stampGoal) {
+      res.status(400).json({ error: 'Nombre de tampons invalide' });
+      return;
+    }
+
+    if (existing.type === 'POINTS') {
+      if (req.body.pointsGoal !== undefined && !pointsGoal) {
+        res.status(400).json({ error: 'Objectif points invalide' });
+        return;
+      }
+      if (req.body.pointsPerEuro !== undefined && !pointsPerEuro) {
+        res.status(400).json({ error: 'Points par euro invalide' });
+        return;
+      }
+    }
+
     const program = await prisma.loyaltyProgram.update({
       where: { id },
       data: {
@@ -133,6 +156,9 @@ programRouter.put('/:id', authenticate, async (req: AuthRequest, res: Response) 
         ...(description !== undefined && { description: typeof description === 'string' ? description.trim() : null }),
         ...(reward && { reward }),
         ...(color && { color }),
+        ...(existing.type === 'STAMPS' && stampGoal && { stampGoal }),
+        ...(existing.type === 'POINTS' && pointsGoal && { pointsGoal }),
+        ...(existing.type === 'POINTS' && pointsPerEuro && { pointsPerEuro }),
         ...(isActive !== undefined && { isActive }),
       },
     });

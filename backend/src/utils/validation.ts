@@ -16,3 +16,16 @@ export function nonEmptyString(value: unknown): string | null {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
 }
+
+export function pngDataUrl(value: unknown): string | null {
+  if (value === null || value === '') return '';
+  if (typeof value !== 'string') return null;
+  if (!value.startsWith('data:image/png;base64,')) return null;
+
+  const base64 = value.slice('data:image/png;base64,'.length);
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) return null;
+
+  const maxBytes = 500 * 1024;
+  const size = Math.floor((base64.length * 3) / 4);
+  return size <= maxBytes ? value : null;
+}

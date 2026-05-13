@@ -52,6 +52,14 @@ function publicImageUrl(value: string | null): string | null {
   return /^https:\/\//i.test(value) ? value : null;
 }
 
+function restaurantLogoUrl(restaurant: { id: string; logo: string | null }): string | null {
+  if (!restaurant.logo) return null;
+  if (restaurant.logo.startsWith('data:image/png;base64,')) {
+    return `${config.apiBaseUrl}/api/restaurants/logo/${restaurant.id}`;
+  }
+  return publicImageUrl(restaurant.logo);
+}
+
 function jwtOrigins(): string[] {
   return /^https:\/\//i.test(config.apiBaseUrl) || /^http:\/\/localhost(:\d+)?$/i.test(config.apiBaseUrl)
     ? [config.apiBaseUrl]
@@ -77,7 +85,7 @@ export async function createLoyaltyClass(programId: string): Promise<void> {
   const client = await auth.getClient();
 
   const classId = buildClassId(programId);
-  const logoUrl = publicImageUrl(program.restaurant.logo);
+  const logoUrl = restaurantLogoUrl(program.restaurant);
 
   const loyaltyClass = {
     id: classId,

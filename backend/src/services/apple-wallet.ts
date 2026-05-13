@@ -44,6 +44,11 @@ function templateAssetPath(fileName: string): string | null {
   return candidates.find((candidate) => fs.existsSync(candidate)) || null;
 }
 
+function pngDataUrlBuffer(value: string | null): Buffer | null {
+  if (!value?.startsWith('data:image/png;base64,')) return null;
+  return Buffer.from(value.slice('data:image/png;base64,'.length), 'base64');
+}
+
 export async function generateApplePass(serialNumber: string): Promise<Buffer> {
   if (!certsExist()) {
     throw new Error(`Certificats Apple non configurés: ${missingCerts().join(', ')}.`);
@@ -145,10 +150,16 @@ export async function generateApplePass(serialNumber: string): Promise<Buffer> {
     }
   );
 
-  const logoPath = templateAssetPath('logo.png');
-  if (logoPath) {
+  const restaurantLogo = pngDataUrlBuffer(card.program.restaurant.logo);
+  if (restaurantLogo) {
+    pass.addBuffer('logo.png', restaurantLogo);
+    pass.addBuffer('logo@2x.png', restaurantLogo);
+  } else {
+    const logoPath = templateAssetPath('logo.png');
+    if (logoPath) {
     pass.addBuffer('logo.png', fs.readFileSync(logoPath));
     pass.addBuffer('logo@2x.png', fs.readFileSync(logoPath));
+    }
   }
 
   const iconPath = templateAssetPath('icon.png');
